@@ -73,3 +73,39 @@ kotlin {
 tasks.named<Test>("jvmTest") {
     dependsOn(tasks.named("jsBrowserDevelopmentWebpack"))
 }
+
+val printBenchmarkResults by tasks.registering {
+    doLast {
+        val report = buildDir.resolve("reports/tests/jsTest/classes/BenchmarkTests.html").readText()
+        val stdout = "#.*;".toRegex().findAll(report).map { it.value }.firstOrNull()
+
+        val benchmarks = stdout?.split(";")?.mapNotNull {
+            if (it.isEmpty()) {
+                null
+            } else {
+                val b = it.split(":")
+                val testName = b[0].replace("#", "")
+
+                // reported testName contains also some info about browser in '[]'
+                val reportedTestName = "${testName}\\[.*\\]".toRegex().find(report)?.value
+
+                val benchmarkMs = b[1].toDouble()
+
+                reportedTestName to benchmarkMs
+            }
+        }?.toMap()
+
+        benchmarks?.forEach {
+            if (it.key != null) {
+                // TeamCity messages need to escape '[' and ']' using '|'
+                val testName = it.key!!.replace("[", "|[").replace("]", "|]")
+                val fullTestName = "BenchmarkTests.$testName"
+
+                // Teamcity treats this output as a service message
+                println("##teamcity[testMetadata testName='$fullTestName' name='benchmark avg' type='number' value='${it.value}']")
+            }
+        }
+    }
+}
+
+tasks.named("jsTest") { finalizedBy(printBenchmarkResults) }
